@@ -6,7 +6,7 @@ import sys
 import datetime
 import numpy as np
 import pandas as pd
-
+import pickle
 
 def tag_to_index(save):
     temp_dict = {}
@@ -15,6 +15,7 @@ def tag_to_index(save):
             if word_tag[1] not in temp_dict.keys():
                 temp_dict = None
     return True
+
 def load_one_line(line):
     line_split_by_space = line.split()
     word_tag_pair_list = []
@@ -75,12 +76,12 @@ def build_bigram_tag_count_table(save, train_tags):
         col_tag = '2 </s>'
         row_tag = '1 ' + sentence[max_index][1]
         df[col_tag][row_tag] += 1
-    print(df)
     return df
 
-# need to handle upper and lower case
-# numbers are not exhaustive
+# numbers are not exhaustive -- handle separately
 # everything saved to small letters except NNP and NNPS
+# <UNK> = words with count <= 1
+# not smoothed
 def build_tag_word_dict(save, train_tags):
     tag_word_dict = {}
     for tag in train_tags:
@@ -96,6 +97,15 @@ def build_tag_word_dict(save, train_tags):
                 tag_word_dict[word_tag_pair[1]][word] = 1
             else:
                 tag_word_dict[word_tag_pair[1]][word] += 1
+    # transform all count == 1 to unknwon
+    for key, value in tag_word_dict.items():
+        new_word_count_dict = {'<UNK>':0}
+        for word, count in value.items():
+            if count > 1:
+                new_word_count_dict[word] = count
+            else:
+                new_word_count_dict['<UNK>'] += 1
+        tag_word_dict[key] = new_word_count_dict
     return tag_word_dict
 
 # implementation of the simple add one smoothing
@@ -105,22 +115,26 @@ def add_one_smoothing(df):
     return df.applymap(add_one)
 
 def get_tag_proba_df(df):
-    #proba_df = df.copy(deep = True)
+    # index is string
     for index, row in df.iterrows():
-        print(index)
         sum = row.sum()
         df.loc[index] = row.apply(lambda x: x/sum)
     return df
 
+def save_model(tag_word_dict, tag_df):
+    with open('model.pkl', 'wb') as f:
+        pickle.dump([tag_word_dict, tag_df], f)
+    print('saved')
+
 def train_model(train_file, model_file):
     save = train_file_to_list(train_file)
     train_tags = get_train_tags(save)
-    #tag_word_dict = build_tag_word_dict(save, train_tags)
+    tag_word_dict = build_tag_word_dict(save, train_tags)
     tag_count_df = build_bigram_tag_count_table(save, train_tags)
     tag_count_df_add_one = add_one_smoothing(tag_count_df)
-    print(tag_count_df_add_one) 
     proba_df = get_tag_proba_df(tag_count_df_add_one)
     print('proba_df', proba_df)
+    save_model(tag_word_dict, proba_df)
     # write your code here. You can add functions as well.
     print('   Finished...')
 

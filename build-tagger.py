@@ -89,23 +89,34 @@ def build_tag_word_dict(save, train_tags):
     for sentence in save:
         for word_tag_pair in sentence:
             word = ''
-            if word_tag_pair[1] == 'NNP' or word_tag_pair[1] == 'NNPS':
-                word = word_tag_pair[0]
-            else:
-                word = word_tag_pair[0].lower()
+            # if word_tag_pair[1] == 'NNP' or word_tag_pair[1] == 'NNPS':
+            #     word = word_tag_pair[0]
+            # else:
+            #     word = word_tag_pair[0].lower()
+            word = word_tag_pair[0].lower()
             if word not in tag_word_dict[word_tag_pair[1]]:
                 tag_word_dict[word_tag_pair[1]][word] = 1
             else:
                 tag_word_dict[word_tag_pair[1]][word] += 1
     # transform all count == 1 to unknwon
+    # deal with the case where <UNK> is too high for NNP and NNPS
     for key, value in tag_word_dict.items():
         new_word_count_dict = {'<UNK>':0}
+        count_plus = 1
+        if key == 'NNP' or key == 'NNPS':
+            #count_plus = 0.5
+            count_plus = 1
         for word, count in value.items():
             if count > 1:
                 new_word_count_dict[word] = count
             else:
-                new_word_count_dict['<UNK>'] += 1
+                new_word_count_dict['<UNK>'] += count_plus
         tag_word_dict[key] = new_word_count_dict
+    #change counts to proba
+    for key, value in tag_word_dict.items():
+        sum_of_values = sum(value.values())
+        for k, v in value.items():
+            value[k] = v/sum_of_values
     return tag_word_dict
 
 # implementation of the simple add one smoothing

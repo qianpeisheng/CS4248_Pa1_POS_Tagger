@@ -47,17 +47,18 @@ def train_file_to_list(train_file):
     # print('               ', len(word_tag_pair_save))
     return word_tag_pair_save
 
+# row is the 1st word, col is the 2nd word
+# row does not have </s>; col does not have <s>
 def build_bigram_tag_count_table(save, train_tags):
-    number_of_rows = len(train_tags) + 2 # add 2 for <s> and </s>
+    number_of_rows = len(train_tags) + 1 # add 1 for <s> in row and </s> in col
     number_of_cols = number_of_rows
-    table_of_zeros = np.zeros((number_of_rows, number_of_cols), dtype = int)
-    train_tags_extended = ['<s>']
-    train_tags_extended.extend(train_tags)
-    train_tags_extended.append('</s>')
-    row_tags, col_tags = [],[]
-    for i in train_tags_extended:
+    table_of_zeros = np.zeros((number_of_rows, number_of_cols), dtype = float)
+    # the table will be converted to a probability table, thus float
+    row_tags, col_tags = ['1 <s>'],[]
+    for i in train_tags:
         row_tags.append('1 ' + i)
         col_tags.append('2 ' + i)
+    col_tags.append('2 </s>')
     df = pd.DataFrame(table_of_zeros, columns = col_tags, index = row_tags)
     # row index: the first word, col index: the second word
     row_tag = None
@@ -95,14 +96,31 @@ def build_tag_word_dict(save, train_tags):
                 tag_word_dict[word_tag_pair[1]][word] = 1
             else:
                 tag_word_dict[word_tag_pair[1]][word] += 1
-    print(tag_word_dict['NN'])
     return tag_word_dict
+
+# implementation of the simple add one smoothing
+def add_one_smoothing(df):
+    def add_one(x):
+            return x + 1
+    return df.applymap(add_one)
+
+def get_tag_proba_df(df):
+    #proba_df = df.copy(deep = True)
+    for index, row in df.iterrows():
+        print(index)
+        sum = row.sum()
+        df.loc[index] = row.apply(lambda x: x/sum)
+    return df
 
 def train_model(train_file, model_file):
     save = train_file_to_list(train_file)
     train_tags = get_train_tags(save)
-    tag_word_dict = build_tag_word_dict(save, train_tags)
-    #tag_count_df = build_bigram_tag_count_table(save, train_tags)
+    #tag_word_dict = build_tag_word_dict(save, train_tags)
+    tag_count_df = build_bigram_tag_count_table(save, train_tags)
+    tag_count_df_add_one = add_one_smoothing(tag_count_df)
+    print(tag_count_df_add_one) 
+    proba_df = get_tag_proba_df(tag_count_df_add_one)
+    print('proba_df', proba_df)
     # write your code here. You can add functions as well.
     print('   Finished...')
 

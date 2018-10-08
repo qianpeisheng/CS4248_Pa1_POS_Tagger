@@ -5,17 +5,130 @@ import math
 import sys
 import datetime
 import numpy as np
-import pandas as pd
 import pickle
 
-def tag_to_index(save):
-    temp_dict = {}
-    for sentence in save:
-        for word_tag in sentence:
-            if word_tag[1] not in temp_dict.keys():
-                temp_dict = None
-    return True
+# work flow
+# read in text, preprocess, save in memory
+# go though text twice, 1st time, get the list of tags, tag_word_count_dict, vocab_list
+# 2nd time, build the bigram tag count matrix, tag_word_count_dict
+# modify the stats:
+# tag count matrix to smoothed tag_probability matirx
+# tag_word_count_dict to change count = 1 to <UNK>
+# vocab_list delete unknown words
+# save
 
+class Tagger:
+    def __init__(self, word_tag_pair_save, model_file):
+        self.word_tag_pair_save = word_tag_pair_save
+        self.tag_matrix = None
+        self.list_of_tags = []
+        self.vocab_set = set()
+        self.tag_word_count_dict = {}
+        self.number_of_tags = 45 # hard code the number of tags, to speed up
+        self.model_file = model_file
+
+    # fill in the tag list, original tag word count dict, vocab list
+    def get_tags_and_vocab(self):
+        for sentence in self.word_tag_pair_save:
+            for word_tag_pair in sentence:
+                word = word_tag_pair[0].lower() # lower case
+                tag = word_tag_pair[1]
+                if tag not in self.list_of_tags:
+                    self.list_of_tags.append(tag)
+                    self.tag_word_count_dict[tag] = {}   
+                self.vocab_set.add(word)
+                if word in self.tag_word_count_dict[tag]:
+                    self.tag_word_count_dict[tag][word] += 1
+                else:
+                    self.tag_word_count_dict[tag][word] = 1
+        self.number_of_tags = len(self.list_of_tags)
+    
+    # count known and calculate proba
+    def set_unknown(self):
+        vocab_unknown = set()
+        for word_dict in self.tag_word_count_dict.values():
+            number_of_unknown = 0
+            unknown_word_set = set()
+            for word, count in word_dict.items():
+                if count == 1:
+                    number_of_unknown += 1
+                    unknown_word_set.add(word)
+            word_dict['<UNK>'] = number_of_unknown
+            vocab_unknown = vocab_unknown.union(unknown_word_set)
+            for word in unknown_word_set:
+                word_dict.pop(word, None)
+                #self.vocab_set.discard(word)
+            count_sum = sum(word_dict.values())
+            for word, count in word_dict.items():
+                word_dict[word] = count/count_sum
+        for word in vocab_unknown:
+            in_dict = False
+            for word_dict in self.tag_word_count_dict.values():
+                if word in word_dict:
+                    in_dict = True
+                    break
+            if not in_dict:
+                self.vocab_set.discard(word)
+    
+    # matrix[t1][t2], t1 (row 0) starts with '<s>', t2 (column 45) ends with '</s>'
+    # also compute proba
+    def get_tag_matrix(self):
+        number_of_rows = len(self.list_of_tags) + 1 # add 1 for <s> in row and </s> in col
+        number_of_cols = number_of_rows
+        self.tag_matrix = np.zeros((number_of_rows, number_of_cols), dtype = float)
+        tag_col = self.list_of_tags.copy()
+        tag_col.append('</s>')
+        tag_row = ['<s>']
+        tag_row.extend(self.list_of_tags)
+        print(tag_col, tag_row)
+        row_dict = {k : tag_row.index(k) for k in tag_row}
+        col_dict = {k : tag_col.index(k) for k in tag_col}
+        print(row_dict)
+        print(col_dict)
+        for sentence in self.word_tag_pair_save:
+            max_index = len(sentence) - 1
+            first = 0
+            second = 1
+            # a sentence has at least 1 word
+            first_tag = '<s>'
+            second_tag = sentence[first][1]
+            first_index = row_dict[first_tag]
+            second_index = col_dict[second_tag]
+            self.tag_matrix[first_index][second_index] += 1
+            while second < max_index:
+                first_tag = sentence[first][1]
+                second_tag = sentence[second][1]
+                first_index = row_dict[first_tag]
+                second_index = col_dict[second_tag]
+                self.tag_matrix[first_index][second_index] += 1
+                first += 1
+                second += 1
+            if max_index == 0:
+                # there is only 1 word
+                second = 0
+            first_tag = sentence[second][1]
+            second_tag = '</s>'
+            first_index = row_dict[first_tag]
+            second_index = col_dict[second_tag]
+            self.tag_matrix[first_index][second_index] += 1
+
+    # implementation of the simple add one smoothing
+    def add_one_smoothing(self):
+        for row in range(self.number_of_tags + 1):
+            for col in range(self.number_of_tags + 1):
+                self.tag_matrix[row][col] += 1
+        
+    def get_tag_proba(self):
+        for row in range(self.number_of_tags + 1):
+            count_sum = sum(self.tag_matrix[row])
+            for col in range(self.number_of_tags + 1):
+                self.tag_matrix[row][col] /= count_sum
+        
+    def save(self):
+        with open(self.model_file, 'wb') as f:
+            pickle.dump([self.tag_matrix, self.tag_word_count_dict, self.vocab_set, self.list_of_tags], f)
+        print('saved')
+        
 def load_one_line(line):
     line_split_by_space = line.split()
     word_tag_pair_list = []
@@ -30,122 +143,33 @@ def load_one_line(line):
             word_tag_pair_list.append(item_split)
     return word_tag_pair_list
 
-def get_train_tags(save):
-    temp_list = []
-    for sentence in save:
-        for word_tag in sentence:
-            if word_tag[1] not in temp_list:
-                temp_list.append(word_tag[1])
-    print('temp list', temp_list)
-    print('number of tags ', len(temp_list))
-    return temp_list
-
 def train_file_to_list(train_file):
     word_tag_pair_save = []
     with open(train_file) as infile:
         for line in infile:
             word_tag_pair_save.append(load_one_line(line))
-    # print('               ', len(word_tag_pair_save))
     return word_tag_pair_save
 
 # row is the 1st word, col is the 2nd word
 # row does not have </s>; col does not have <s>
-def build_bigram_tag_count_table(save, train_tags):
-    number_of_rows = len(train_tags) + 1 # add 1 for <s> in row and </s> in col
-    number_of_cols = number_of_rows
-    table_of_zeros = np.zeros((number_of_rows, number_of_cols), dtype = float)
-    # the table will be converted to a probability table, thus float
-    row_tags, col_tags = ['1 <s>'],[]
-    for i in train_tags:
-        row_tags.append('1 ' + i)
-        col_tags.append('2 ' + i)
-    col_tags.append('2 </s>')
-    df = pd.DataFrame(table_of_zeros, columns = col_tags, index = row_tags)
-    # row index: the first word, col index: the second word
-    row_tag = None
-    col_tag = None
-    for sentence in save:
-        max_index = len(sentence) - 1
-        for word__tag_index_pair in enumerate(sentence):
-            col_tag = '2 ' + word__tag_index_pair[1][1]
-            if (word__tag_index_pair[0] == 0):
-                row_tag = '1 <s>'
-            else:
-                row_tag = '1 ' + sentence[word__tag_index_pair[0] - 1][1]# e.g. ['In', 'IN'], without index
-            df[col_tag][row_tag] += 1
-        col_tag = '2 </s>'
-        row_tag = '1 ' + sentence[max_index][1]
-        df[col_tag][row_tag] += 1
-    return df
 
 # numbers are not exhaustive -- handle separately
 # everything saved to small letters except NNP and NNPS
 # <UNK> = words with count <= 1
 # not smoothed
-def build_tag_word_dict(save, train_tags):
-    tag_word_dict = {}
-    for tag in train_tags:
-        tag_word_dict[tag] = {}
-    for sentence in save:
-        for word_tag_pair in sentence:
-            word = ''
-            # if word_tag_pair[1] == 'NNP' or word_tag_pair[1] == 'NNPS':
-            #     word = word_tag_pair[0]
-            # else:
-            #     word = word_tag_pair[0].lower()
-            word = word_tag_pair[0].lower()
-            if word not in tag_word_dict[word_tag_pair[1]]:
-                tag_word_dict[word_tag_pair[1]][word] = 1
-            else:
-                tag_word_dict[word_tag_pair[1]][word] += 1
-    # transform all count == 1 to unknwon
-    # deal with the case where <UNK> is too high for NNP and NNPS
-    for key, value in tag_word_dict.items():
-        new_word_count_dict = {'<UNK>':0}
-        count_plus = 1
-        if key == 'NNP' or key == 'NNPS':
-            #count_plus = 0.5
-            count_plus = 1
-        for word, count in value.items():
-            if count > 1:
-                new_word_count_dict[word] = count
-            else:
-                new_word_count_dict['<UNK>'] += count_plus
-        tag_word_dict[key] = new_word_count_dict
-    #change counts to proba
-    for key, value in tag_word_dict.items():
-        sum_of_values = sum(value.values())
-        for k, v in value.items():
-            value[k] = v/sum_of_values
-    return tag_word_dict
-
-# implementation of the simple add one smoothing
-def add_one_smoothing(df):
-    def add_one(x):
-            return x + 1
-    return df.applymap(add_one)
-
-def get_tag_proba_df(df):
-    # index is string
-    for index, row in df.iterrows():
-        sum = row.sum()
-        df.loc[index] = row.apply(lambda x: x/sum)
-    return df
-
-def save_model(tag_word_dict, tag_df):
-    with open('model.pkl', 'wb') as f:
-        pickle.dump([tag_word_dict, tag_df], f)
-    print('saved')
 
 def train_model(train_file, model_file):
-    save = train_file_to_list(train_file)
-    train_tags = get_train_tags(save)
-    tag_word_dict = build_tag_word_dict(save, train_tags)
-    tag_count_df = build_bigram_tag_count_table(save, train_tags)
-    tag_count_df_add_one = add_one_smoothing(tag_count_df)
-    proba_df = get_tag_proba_df(tag_count_df_add_one)
-    print('proba_df', proba_df)
-    save_model(tag_word_dict, proba_df)
+    word_tag_pair_save = train_file_to_list(train_file)
+    tagger = Tagger(word_tag_pair_save, model_file)
+    tagger.get_tags_and_vocab()
+    tagger.set_unknown()
+    tagger.get_tag_matrix()
+    tagger.add_one_smoothing()
+    tagger.get_tag_proba()
+    print(tagger.list_of_tags)
+    print(tagger.tag_matrix)
+    print(len(tagger.list_of_tags))
+    tagger.save()
     # write your code here. You can add functions as well.
     print('   Finished...')
 

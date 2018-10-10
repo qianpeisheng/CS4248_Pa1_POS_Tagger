@@ -83,8 +83,6 @@ class Tagger:
         print(tag_col, tag_row)
         row_dict = {k : tag_row.index(k) for k in tag_row}
         col_dict = {k : tag_col.index(k) for k in tag_col}
-        print(row_dict)
-        print(col_dict)
         for sentence in self.word_tag_pair_save:
             max_index = len(sentence) - 1
             first = 0
@@ -117,7 +115,26 @@ class Tagger:
         for row in range(self.number_of_tags + 1):
             for col in range(self.number_of_tags + 1):
                 self.tag_matrix[row][col] += 1
-        
+    
+    # implementation of Witten-Bell Smoothing
+    # V is very small
+    def wb_smoothing(self):
+        for row in range(self.number_of_tags + 1):
+            T = 0
+            Cw0 = 0
+            V = self.number_of_tags + 1
+            for col in range(self.number_of_tags + 1):
+                if self.tag_matrix[row][col] != 0:
+                    T += 1
+                    Cw0 += self.tag_matrix[row][col] # no need to add 0
+            for col in range(self.number_of_tags + 1):
+                if self.tag_matrix[row][col] != 0:
+                    self.tag_matrix[row][col] /= (Cw0 + T)
+                else:
+                    self.tag_matrix[row][col] =  T / ((V-T)*(Cw0+T))
+    
+    # implementation of interpolation
+    
     def get_tag_proba(self):
         for row in range(self.number_of_tags + 1):
             count_sum = sum(self.tag_matrix[row])
@@ -164,11 +181,9 @@ def train_model(train_file, model_file):
     tagger.get_tags_and_vocab()
     tagger.set_unknown()
     tagger.get_tag_matrix()
-    tagger.add_one_smoothing()
-    tagger.get_tag_proba()
-    print(tagger.list_of_tags)
-    print(tagger.tag_matrix)
-    print(len(tagger.list_of_tags))
+    # tagger.add_one_smoothing()
+    # tagger.get_tag_proba()
+    tagger.wb_smoothing()
     tagger.save()
     # write your code here. You can add functions as well.
     print('   Finished...')

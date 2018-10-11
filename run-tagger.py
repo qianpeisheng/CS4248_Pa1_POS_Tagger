@@ -36,7 +36,7 @@ class Tagger:
         last_col = [(0, '<s>') for i in range(self.number_of_tags)]
 
         for word_index, word in enumerate(sentence):
-            word = word.lower()
+            word = word#.lower()
             new_col = []
             if word in self.vocab_set:
                 for index, tag in enumerate(self.list_of_tags):
@@ -64,6 +64,15 @@ class Tagger:
                     tag_col = index 
                     # know that it will be unknown
                     unk_proba = self.tag_word_count_dict[tag]['<UNK>']
+                    if word[0].isupper() and word != sentence[0]:
+                        if tag == 'NNP' or tag == 'NNPS':
+                            unk_proba *= 100 # guess a word with capital first letter not at the start is NNP/NNPS
+                    # handle the case of the first word
+                    # if len(sentence) > 1:
+                    #     if word[0].isupper() and word == sentence[0] and sentence[1][0].isupper():
+                    #         if tag == 'NNP' or tag == 'NNPS':
+                    #         # print(sentence, ' sentence')
+                    #             unk_proba *= 100
                     if unk_proba == 0:
                         log_p_w_t = -999
                     else:

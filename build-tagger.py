@@ -30,9 +30,20 @@ class Tagger:
     # fill in the tag list, original tag word count dict, vocab list
     def get_tags_and_vocab(self):
         for sentence in self.word_tag_pair_save:
+            is_first = True
             for word_tag_pair in sentence:
-                word = word_tag_pair[0].lower() # lower case
+                word = word_tag_pair[0]#.lower() # lower case
+                # further modify the cap of first letter
+                # if len(sentence) > 1:
+                #     second_word = sentence[1][0]
+                #     if not second_word[0].isupper():
+                #         ttt = 1
+                        # lower the first word
+                        #word = word.lower()
                 tag = word_tag_pair[1]
+                # if tag != 'NNP' and tag != 'NNPS' and is_first:
+                #     word = word.lower()
+                # is_first = False
                 if tag not in self.list_of_tags:
                     self.list_of_tags.append(tag)
                     self.tag_word_count_dict[tag] = {}   
@@ -59,8 +70,18 @@ class Tagger:
                 word_dict.pop(word, None)
                 #self.vocab_set.discard(word)
             count_sum = sum(word_dict.values())
+            type_count = len(word_dict.keys())
+            smooth_ratio = 0
             for word, count in word_dict.items():
-                word_dict[word] = count/count_sum
+                # the idea is that the higher ratio the diversity, the more likely the unknown
+                if (word_dict['<UNK>'] == 0):
+                    # not smoothed, because unknwon will probably not appear
+                    word_dict[word] = count/count_sum
+                else:
+                    if word == '<UNK>':
+                        word_dict[word] = (count + type_count * smooth_ratio)/ (count_sum + type_count * smooth_ratio)
+                    else:
+                        word_dict[word] = count/ (count_sum + type_count * smooth_ratio)
         for word in vocab_unknown:
             in_dict = False
             for word_dict in self.tag_word_count_dict.values():
@@ -69,6 +90,7 @@ class Tagger:
                     break
             if not in_dict:
                 self.vocab_set.discard(word)
+
     
     # matrix[t1][t2], t1 (row 0) starts with '<s>', t2 (column 45) ends with '</s>'
     # also compute proba
